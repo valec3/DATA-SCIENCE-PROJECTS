@@ -1,0 +1,489 @@
+---
+title: "Análisis de Reservas Hoteleras"
+author: "Grupo 01"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+
+
+# Contexto
+
+## CONTEXTO DEL PROBLEMA
+
+Las cancelaciones de reservas representan una **pérdida significativa de ingresos** para la industria hotelera. En un entorno donde las reservas online permiten cancelaciones gratuitas o de bajo costo, entender los patrones detrás de estas decisiones se convierte en **crucial para la rentabilidad del negocio**.
+
+## OBJETIVOS PRINCIPALES
+
+1. **Identificar** los factores clave que influyen en las cancelaciones
+2. **Cuantificar** el impacto económico potencial de las cancelaciones  
+3. **Proporcionar** insights accionables para reducir tasas de cancelación
+4. **Segmentar** clientes según su propensión a cancelar
+
+## PREGUNTAS DE INVESTIGACIÓN
+
+### • ¿Qué características de las reservas predicen mayor probabilidad de cancelación?
+**Análisis de variables predictoras y su impacto en el comportamiento de cancelación**
+
+### • ¿Existen patrones temporales en las cancelaciones?
+**Identificación de estacionalidad y tendencias en el tiempo**
+
+### • ¿Cómo influye el precio y la anticipación en la decisión de cancelar?
+**Análisis de sensibilidad al precio y efecto del lead time**
+
+### • ¿Los clientes recurrentes muestran diferente comportamiento?
+**Comparación de patrones entre clientes nuevos y recurrentes**
+
+# Cargar librerías necesarias
+
+```{r setup, warning=FALSE, message=FALSE}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(reshape2)
+```
+
+# Cargar datos
+
+```{r}
+# Cargar los datos
+datos <- read.table("C:\\Users\\USER\\OneDrive\\Documentos\\unap\\9no\\cienciadatos2\\data_hoteles.txt", header = TRUE, sep = ",")
+
+# Exploración inicial
+cat("Dimensiones del dataset:", dim(datos), "\n")
+cat("Estructura del dataset:\n")
+str(datos)
+cat("Primeras filas del dataset:\n")
+head
+cat("
+METODOLOGÍA:
+Dataset analizado contiene", nrow(datos), "reservas con", ncol(datos), "variables
+por reserva. El análisis combina estadística descriptiva, visualización de datos
+y análisis de correlaciones para identificar patrones significativos.
+")
+```
+
+# Limpieza de datos
+
+```{r}
+# Verificar valores nulos
+cat("Valores nulos por variable:\n")
+sapply(datos, function(x) sum(is.na(x)))
+
+# Verificar duplicados
+cat("Número de filas duplicadas:", sum(duplicated(datos)), "\n")
+
+# Convertir variables categóricas a factores
+datos$booking_status <- as.factor(datos$booking_status)
+datos$type_of_meal_plan <- as.factor(datos$type_of_meal_plan)
+datos$room_type_reserved <- as.factor(datos$room_type_reserved)
+datos$market_segment_type <- as.factor(datos$market_segment_type)
+```
+
+# Analisis descriptivo
+
+## Resumen descriptivo (univariante)
+
+```{r}
+# Resumen estadístico
+num_vars <- sapply(datos, is.numeric)
+summary(datos[, num_vars])
+# Variables categóricas básicas: contar niveles
+cat_vars <- names(datos)[sapply(datos, function(x) is.character(x) || is.factor(x))]
+lapply(datos[cat_vars], function(x) {
+  tmp <- table(x, useNA="ifany")
+  head(tmp, 10)
+})
+```
+
+# Análisis exploratorio
+
+## Análisis de la variable objetivo: booking_status
+
+```{r}
+cat("Distribución de booking_status:\n")
+table(datos$booking_status)
+prop.table(table(datos$booking_status)) * 100
+
+```
+
+```{r}
+# Visualización de la variable objetivo
+ggplot(datos, aes(x = booking_status, fill = booking_status)) +
+  geom_bar() +
+  labs(title = "Distribución de Estado de Reservas",
+       x = "Estado de la Reserva",
+       y = "Cantidad") +
+  theme_minimal()
+```
+
+
+
+## Análisis de variables numéricas clave
+
+```{r}
+variables_numericas <- datos %>%
+  select(no_of_adults, no_of_children, no_of_weekend_nights, 
+         no_of_week_nights, lead_time, avg_price_per_room,
+         no_of_special_requests)
+
+# Histogramas de variables numéricas
+par(mfrow = c(2, 3))
+for (i in 1:ncol(variables_numericas)) {
+  hist(variables_numericas[[i]], main = names(variables_numericas)[i],
+       xlab = names(variables_numericas)[i], col = "lightblue")
+}
+```
+
+**INTERPRETACION**
+
+- **Lead Time**: Promedio de 85 días con amplia variabilidad (0-443 días)
+- **Precio promedio**: 103.42€ con rango amplio (0-540€), sugiriendo estrategias de precios dinámicos
+- **Huéspedes recurrentes**: Solo 2.56% de la base, oportunidad para programas de fidelización
+- **Solicitudes especiales**: Promedio bajo (0.62), indicando potencial para personalización
+
+
+## Análisis de cancelaciones por diferentes factores
+
+```{r}
+
+# 1. Cancelaciones por lead_time
+ggplot(datos, aes(x = booking_status, y = lead_time, fill = booking_status)) +
+  geom_boxplot() +
+  labs(title = "Tiempo de Anticipación vs Cancelación",
+       x = "Estado de Reserva", y = "Días de Anticipación") +
+  theme_minimal()
+```
+
+## Cancelaciones por tipo de habitación y plan de comidas
+
+```{r}
+ggplot(datos, aes(x = room_type_reserved, fill = booking_status)) +
+  geom_bar(position = "fill") +
+  labs(title = "Proporción de Cancelaciones por Tipo de Habitación",
+       x = "Tipo de Habitación", y = "Proporción") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Cancelaciones por plan de comidas
+
+```{r}
+ggplot(datos, aes(x = type_of_meal_plan, fill = booking_status)) +
+  geom_bar(position = "fill") +
+  labs(title = "Proporción de Cancelaciones por Plan de Comidas",
+       x = "Plan de Comidas", y = "Proporción") +
+  theme_minimal()
+```
+
+## Análisis de la situación actual de la var objetivo
+
+```{r}
+cat("DISTRIBUCIÓN EXACTA DE booking_status:\n")
+distribucion <- table(datos$booking_status)
+print(distribucion)
+
+# Calcular tasa de cancelación 
+total_reservas <- nrow(datos)
+reservas_canceladas <- sum(datos$booking_status == "Canceled")
+reservas_no_canceladas <- sum(datos$booking_status == "Not_Canceled")
+
+tasa_cancelacion <- (reservas_canceladas / total_reservas) * 100
+tasa_no_cancelacion <- (reservas_no_canceladas / total_reservas) * 100
+
+cat("\nANÁLISIS PRECISO DE CANCELACIONES:\n")
+cat("• Total de reservas:", total_reservas, "\n")
+cat("• Reservas canceladas:", reservas_canceladas, "\n")
+cat("• Reservas no canceladas:", reservas_no_canceladas, "\n")
+cat("• Tasa de cancelación:", round(tasa_cancelacion, 2), "%\n")
+cat("• Tasa de cumplimiento:", round(tasa_no_cancelacion, 2), "%\n")
+
+# Interpretación 
+# cat("\nINTERPRETACIÓN:\n")cat("• Aproximadamente", round(tasa_cancelacion, 0), "de cada 100 reservas se cancelan\n")
+# cat("• Esto significa que 1 de cada", round(100/tasa_cancelacion, 1), "reservas se cancela\n")
+# cat("• El hotel logra cumplir", round(tasa_no_cancelacion, 0), "% de sus reservas\n")
+```
+
+**INTERPRETACION**
+
+- **32.76% de cancelaciones** vs **67.24% de reservas cumplidas**
+- **1 de cada 3 reservas** se cancela, indicando una oportunidad significativa de mejora
+- El hotel tiene una **tasa de cumplimiento del 67%**, lo que sugiere espacio para optimización
+
+# ANÁLISIS DE FACTORES CLAVE
+
+## FACTOR 1: Lead Time (Tiempo de Anticipación)
+
+```{r}
+lead_time_analysis <- datos %>%
+  group_by(booking_status) %>%
+  summarise(
+    n = n(),
+    lead_time_promedio = mean(lead_time, na.rm = TRUE),
+    lead_time_mediana = median(lead_time, na.rm = TRUE),
+    lead_time_sd = sd(lead_time, na.rm = TRUE)
+  )
+
+print(lead_time_analysis)
+
+# Prueba estadística para validar diferencia
+t_test_result <- t.test(lead_time ~ booking_status, data = datos)
+cat("\nPRUEBA ESTADÍSTICA (t-test):\n")
+cat("• Diferencia en lead time es estadísticamente significativa (p-value:", 
+    round(t_test_result$p.value, 4), ")\n")
+
+ggplot(datos, aes(x = booking_status, y = lead_time, fill = booking_status)) +
+  geom_boxplot() +
+  labs(title = "LEAD TIME POR ESTADO DE RESERVA",
+       subtitle = "Las reservas canceladas tienen mayor tiempo de anticipación",
+       x = "Estado de la Reserva", 
+       y = "Días de Anticipación") +
+  theme_minimal()
+
+# cat("\nINTERPRETACIÓN PRECISA:\n")
+# cat("• Las reservas canceladas se hicieron con", 
+#     round(lead_time_analysis$lead_time_promedio[1], 0), 
+#     "días de anticipación en promedio\n")
+# cat("• Las reservas cumplidas se hicieron con", 
+#     round(lead_time_analysis$lead_time_promedio[2], 0), 
+#     "días de anticipación en promedio\n")
+# cat("• Las reservas canceladas tienen", 
+#     round(lead_time_analysis$lead_time_promedio[1] / lead_time_analysis$lead_time_promedio[2], 1),
+#     "veces MÁS tiempo de anticipación\n")
+# cat("• IMPLICACIÓN: A mayor anticipación, mayor ventana para cambios de planes\n")
+```
+
+**INTERPRETACIÓN:**
+- Las reservas canceladas se hicieron con 139 días de anticipación en promedio y las cumplidas con 59 días
+- Las reservas canceladas tienen 2.4 veces MÁS tiempo de anticipación
+- Diferencia estadísticamente significativa (p-value ≈ 0)
+- Implicación estratégica: 
+  - Reservas con mucha anticipación (>100 días) requieren gestión proactiva
+  - A mayor anticipación, mayor ventana para cambios de planes
+
+# FACTOR 2: Precio Promedio
+
+```{r}
+precio_analysis <- datos %>%
+  group_by(booking_status) %>%
+  summarise(
+    n = n(),
+    precio_promedio = mean(avg_price_per_room, na.rm = TRUE),
+    precio_mediana = median(avg_price_per_room, na.rm = TRUE),
+    precio_sd = sd(avg_price_per_room, na.rm = TRUE)
+  )
+
+print(precio_analysis)
+
+# Prueba estadística
+t_test_precio <- t.test(avg_price_per_room ~ booking_status, data = datos)
+
+ggplot(datos, aes(x = booking_status, y = avg_price_per_room, fill = booking_status)) +
+  geom_boxplot() +
+  labs(title = "PRECIO PROMEDIO POR ESTADO DE RESERVA",
+       x = "Estado de la Reserva", 
+       y = "Precio Promedio (€)") +
+  theme_minimal()
+
+# cat("\nINTERPRETACIÓN PRECISA:\n")
+# cat("• Precio promedio canceladas:", round(precio_analysis$precio_promedio[1], 2), "€\n")
+# cat("• Precio promedio no canceladas:", round(precio_analysis$precio_promedio[2], 2), "€\n")
+# cat("• Diferencia de precio:", round(precio_analysis$precio_promedio[1] - precio_analysis$precio_promedio[2], 2), "€\n")
+# cat("• Las reservas canceladas son", 
+#     round((precio_analysis$precio_promedio[1] / precio_analysis$precio_promedio[2] - 1) * 100, 1),
+#     "% más caras en promedio\n")
+# cat("• IMPLICACIÓN: Los clientes pueden ser más sensibles a cancelar reservas de mayor valor\n")
+```
+
+**RESULTADO**: Canceladas = 110.59€ vs No Canceladas = 99.93€
+
+**INTERPRETACIÓN:**
+
+- Reservas canceladas son 10.7% más caras en promedio
+- Diferencia de 10.66€ estadísticamente significativa
+- Implicación estratégica: Los clientes pueden ser más sensibles a cancelar reservas de mayor valor
+
+
+## FACTOR 3: Huéspedes Recurrentes
+
+```{r}
+
+lealtad_analysis <- datos %>%
+  group_by(repeated_guest, booking_status) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(repeated_guest) %>%
+  mutate(prop = n / sum(n) * 100)
+
+print(lealtad_analysis)
+
+# Calcular tasas específicas
+tasa_cancel_nuevos <- lealtad_analysis$prop[lealtad_analysis$repeated_guest == 0 & lealtad_analysis$booking_status == "Canceled"]
+tasa_cancel_recurrentes <- lealtad_analysis$prop[lealtad_analysis$repeated_guest == 1 & lealtad_analysis$booking_status == "Canceled"]
+
+cat("\nINTERPRETACIÓN PRECISA:\n")
+cat("• Tasa cancelación clientes NUEVOS:", round(tasa_cancel_nuevos, 1), "%\n")
+cat("• Tasa cancelación clientes RECURRENTES:", round(tasa_cancel_recurrentes, 1), "%\n")
+cat("• Los clientes nuevos cancelan", round(tasa_cancel_nuevos / tasa_cancel_recurrentes, 1), "veces MÁS\n")
+cat("• IMPLICACIÓN: La lealtad del cliente reduce significativamente el riesgo de cancelación\n")
+```
+
+**RESULTADO:** Nuevos = 33.6% cancelación vs Recurrentes = 1.7% cancelación
+
+**INTERPRETACIÓN:**
+
+- Clientes nuevos cancelan 19.5 veces más que recurrentes
+- Lealtad reduce dramáticamente el riesgo de cancelación
+- Implicación estratégica: 
+  - Invertir en programas de fidelización es crítico
+  - La lealtad del cliente reduce significativamente el riesgo de cancelación
+  
+## Analisis de correlaciones
+
+```{r}
+datos
+# Seleccionar solo variables numéricas para correlación
+variables_numericas <- datos %>%
+  select(where(is.numeric))
+
+# Matriz de correlación
+correlaciones <- cor(variables_numericas, use = "complete.obs")
+print(round(correlaciones, 2))
+
+cat("\nCORRELACIONES CLAVE IDENTIFICADAS:\n")
+cat("• Lead time vs Precio: r =", round(cor(datos$lead_time, datos$avg_price_per_room, use = "complete.obs"), 3), "\n")
+cat("• Noches fin de semana vs Noches semana: r =", 
+    round(cor(datos$no_of_weekend_nights, datos$no_of_week_nights, use = "complete.obs"), 3), "\n")
+cat("• Adultos vs Precio: r =", round(cor(datos$no_of_adults, datos$avg_price_per_room, use = "complete.obs"), 3), "\n")
+
+
+corrplot(correlaciones, 
+         method = "color",
+         type = "upper",
+         order = "hclust",
+         tl.cex = 0.8,
+         tl.col = "black",
+         tl.srt = 45,
+         title = "MATRIZ DE CORRELACIONES - MÉTODO HCLUST",
+         mar = c(0, 0, 2, 0))
+
+
+
+```
+
+## ANÁLISIS E INTERPRETACIÓN DE CORRELACIONES CLAVE
+
+```{r}
+
+# Correlaciones más fuertes (absolutas)
+correlaciones_abs <- abs(correlaciones)
+diag(correlaciones_abs) <- 0  # Eliminar diagonal
+
+
+correlaciones_fuertes <- which(correlaciones_abs > 0.3 & correlaciones_abs < 1, arr.ind = TRUE)
+correlaciones_fuertes
+
+cat("CORRELACIONES MÁS FUERTES IDENTIFICADAS:\n")
+for(i in 1:nrow(correlaciones_fuertes)) {
+  var1 <- rownames(correlaciones)[correlaciones_fuertes[i,1]]
+  var2 <- colnames(correlaciones)[correlaciones_fuertes[i,2]]
+  valor <- correlaciones[correlaciones_fuertes[i,1], correlaciones_fuertes[i,2]]
+  
+  cat("•", var1, "vs", var2, ": r =", round(valor, 3), "\n")
+  
+  # Interpretación automática
+  if(abs(valor) > 0.7) {
+    cat("  → CORRELACIÓN MUY FUERTE\n")
+  } else if(abs(valor) > 0.5) {
+    cat("  → CORRELACIÓN FUERTE\n")
+  } else if(abs(valor) > 0.3) {
+    cat("  → CORRELACIÓN MODERADA\n")
+  }
+}
+
+```
+
+#### CORRELACIONES DESTACADAS:(FUERTE)
+#### • no_of_previous_bookings_not_canceled vs repeated_guest: r = 0.539 (FUERTE)
+#### • no_of_previous_cancellations vs repeated_guest: r = 0.391 (MODERADA)
+#### • avg_price_per_room vs no_of_children: r = 0.338 (MODERADA)
+
+**INTERPRETACIÓN DE CORRELACIONES CLAVE**
+
+Lealtad y Historial Positivo (r = 0.539):
+
+  - Los huéspedes recurrentes tienen fuerte correlación con reservas previas no canceladas
+  - Estrategia: Construir historial positivo mediante experiencias exitosas
+
+Precio y Composición Familiar:
+
+  - Más niños correlaciona con precios más altos (r = 0.338)
+  - Estrategia: Desarrollar paquetes familiares con valor percibido
+
+Patrón de comportamiento:
+
+  - Cancelaciones previas vs Reservas no canceladas: r = 0.468 (MODERADA)
+  - Los clientes muestran consistencia en su comportamiento - quienes tienen historial mixto (algunas   cancelaciones, algunas no) mantienen ese patrón
+  - Estrategia: Considerar estacionalidad en políticas de cancelación
+  
+  
+
+# Conclusiones 
+### ¿Qué características de las reservas predicen mayor probabilidad de cancelación?
+
+**HALLAZGOS CONFIRMADOS:**
+
+- **Lead Time**: Reservas con 139+ días de anticipación (2.4x más riesgo)
+- **Precio**: Reservas >110€ (10.7% más caras en canceladas)
+- **Tipo de Cliente**: Nuevos clientes (33.6% cancelación vs 1.7% recurrentes)
+
+### ¿Existen patrones temporales en las cancelaciones?
+
+**HALLAZGOS CONFIRMADOS:**
+
+- **Correlación temporal**: r = -0.34 entre año y mes (patrón estacional)
+- **Lead Time crítico**: 85 días promedio general, pero 139 días en canceladas
+- **Ventana de riesgo**: Reservas >60 días requieren atención especial
+
+### ¿Cómo influye el precio y la anticipación en la decisión de cancelar?
+
+**HALLAZGOS CONFIRMADOS:**
+
+- **Efecto combinado**: Alta anticipación + precio premium = máximo riesgo
+- **Sensibilidad al precio**: 10.66€ diferencia promedio entre canceladas/no canceladas
+- **Ventana de oportunidad**: Mayor tiempo = mayor probabilidad de cambios
+
+### ¿Los clientes recurrentes muestran diferente comportamiento?
+
+**HALLAZGOS CONFIRMADOS:**
+
+- **Impacto dramático**: 19.5x menos probabilidad de cancelar
+- **Correlación fuerte**: r = 0.539 con historial positivo
+- **Comportamiento consistente**: Patrones predecibles en clientes leales
+
+# Recomendaciones
+
+### Para Reservas de Alta Anticipación (>100 días)
+- Implementar contactos de recordatorio a 60, 30 y 15 días
+- Ofrecer opciones de modificación flexible
+- Considerar políticas de depósito escalonado
+
+### Para Reservas de Precio Premium (>110€)
+- Desarrollar paquetes con valor agregado
+- Implementar seguros de cancelación opcionales
+- Estrategias de fidelización post-cancelación
+
+### Para Clientes Nuevos
+- Programa de bienvenida con beneficios inmediatos
+- Comunicación proactiva sobre políticas
+- Incentivos para primera experiencia positiva
+
+### Para Incrementar Clientela Recurrente
+- Programa de beneficios por lealtad
+- Reconocimiento y tratamientos preferenciales
