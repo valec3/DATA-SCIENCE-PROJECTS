@@ -1,17 +1,23 @@
 ---
 title: "Análisis de Reservas Hoteleras"
-author: "Grupo 01"
+author: "Victor, Rene, Noe, Jhon, Julio"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 editor_options:
   markdown:
     wrap: 72
 ---
 
+# Integrantes
 
+- Maye Mamani Victor Raul
+- Machaca Chambilla Noe Ulises 
+- Gonzales Quispe Jhon Cristhian 
+- Ccoyto Pachapuma Rene Rolando
+- Eduardo Maquera Julio Segundo
 
 # Contexto
 
@@ -48,6 +54,7 @@ library(dplyr)
 library(ggplot2)
 library(corrplot)
 library(reshape2)
+library(lubridate)
 ```
 
 # Cargar datos
@@ -122,6 +129,16 @@ ggplot(datos, aes(x = booking_status, fill = booking_status)) +
        x = "Estado de la Reserva",
        y = "Cantidad") +
   theme_minimal()
+
+# grafico circular
+
+ggplot(datos, aes(x = "", fill = booking_status)) +
+  geom_bar(width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Proporción de Estado de Reservas") +
+  theme_void() +
+  theme(legend.title = element_blank())
+
 ```
 
 
@@ -182,6 +199,29 @@ ggplot(datos, aes(x = type_of_meal_plan, fill = booking_status)) +
        x = "Plan de Comidas", y = "Proporción") +
   theme_minimal()
 ```
+
+## Analisis temporal 
+```{r}
+# Crear columna de fecha y agrupar por mes
+df_monthly <- datos %>%
+  mutate(arrival_date_full = make_date(arrival_year, arrival_month, arrival_date),
+         month = floor_date(arrival_date_full, "month")) %>%
+  group_by(month) %>%
+  summarise(total_bookings = n())
+
+# Gráfico por meses con línea suavizada
+ggplot(df_monthly, aes(x = month, y = total_bookings)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkred", size = 2) +
+  geom_smooth(method = "loess", se = FALSE, 
+              color = "orange", size = 1.2, linetype = "dashed") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y") +  # todos los meses
+  labs(title = "Reservas por mes con tendencia suavizada",
+       x = "Mes", y = "Número de reservas") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
 
 ## Análisis de la situación actual de la var objetivo
 
@@ -322,6 +362,16 @@ lealtad_analysis <- datos %>%
   mutate(prop = n / sum(n) * 100)
 
 print(lealtad_analysis)
+
+# GRAFICA
+ggplot(lealtad_analysis, aes(x = as.factor(repeated_guest), y = prop, fill = booking_status)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "TASA DE CANCELACIÓN POR TIPO DE CLIENTE",
+       subtitle = "Clientes recurrentes muestran tasas de cancelación dramáticamente más bajas",
+       x = "Cliente Recurrente (0=No, 1=Sí)", 
+       y = "Proporción (%)") +
+  theme_minimal()
+
 
 # Calcular tasas específicas
 tasa_cancel_nuevos <- lealtad_analysis$prop[lealtad_analysis$repeated_guest == 0 & lealtad_analysis$booking_status == "Canceled"]
